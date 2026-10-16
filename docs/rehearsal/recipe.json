@@ -1,0 +1,267 @@
+{
+ "name": "seonrin-crawl-r3-core",
+ "fidelity": "L1-local-sandbox FAKE (fake sites on loopback; no real Zyte, no real websites)",
+ "size": "L1",
+ "reset": "python3 /home/claude/r3/tests/kitchen.py down; rm -rf /tmp/r3k",
+ "steps": [
+  {
+   "id": "workdir",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "test -d /tmp/r3k",
+   "do": [
+    "mkdir -p /tmp/r3k"
+   ],
+   "expect": "exit 0; work dir writable",
+   "check_after": "test -w /tmp/r3k",
+   "undo": "rm -rf /tmp/r3k",
+   "on_fail": [
+    "permission-denied",
+    "disk-full"
+   ]
+  },
+  {
+   "id": "deps",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "python3 -c 'import scrapy,trafilatura,protego'",
+   "do": [
+    "pip install -q scrapy trafilatura --break-system-packages",
+    "pip install -q scrapy trafilatura"
+   ],
+   "expect": "imports succeed",
+   "check_after": "python3 -c 'import scrapy,trafilatura,protego'",
+   "undo": "none: packages stay installed",
+   "on_fail": [
+    "network-drop",
+    "disk-full",
+    "permission-denied"
+   ]
+  },
+  {
+   "id": "unit",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "tail -3 /tmp/r3k/unit.txt | grep -q '^OK'",
+   "do": [
+    "cd /home/claude/r3 && python3 -m unittest tests.test_units > /tmp/r3k/unit.txt 2>&1"
+   ],
+   "expect": "11 unit tests OK",
+   "check_after": "tail -3 /tmp/r3k/unit.txt | grep -q '^OK'",
+   "undo": "rm -f /tmp/r3k/unit.txt",
+   "on_fail": [
+    "disk-full",
+    "permission-denied"
+   ]
+  },
+  {
+   "id": "sites_up",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "curl -sf http://127.0.0.1:18201/robots.txt > /dev/null",
+   "do": [
+    "python3 /home/claude/r3/tests/kitchen.py up"
+   ],
+   "expect": "fake sites answer on 18201",
+   "check_after": "curl -sf http://127.0.0.1:18201/robots.txt > /dev/null",
+   "undo": "python3 /home/claude/r3/tests/kitchen.py down",
+   "on_fail": [
+    "port-in-use",
+    "network-drop",
+    "permission-denied"
+   ]
+  },
+  {
+   "id": "crawl",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "test -s /tmp/r3k/items0.jsonl && test -s /tmp/r3k/items1.jsonl",
+   "do": [
+    "cd /home/claude/r3 && python3 tests/kitchen.py crawl",
+    "cd /home/claude/r3 && R3_NO_TRAFILATURA=1 python3 tests/kitchen.py crawl"
+   ],
+   "expect": "two slices written; 2nd method = plain-text fallback",
+   "check_after": "test -s /tmp/r3k/items0.jsonl && test -s /tmp/r3k/items1.jsonl",
+   "undo": "rm -f /tmp/r3k/items0.jsonl /tmp/r3k/items1.jsonl",
+   "on_fail": [
+    "trafilatura-missing",
+    "sites-down",
+    "network-drop",
+    "disk-full"
+   ]
+  },
+  {
+   "id": "fallback_crawl",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "test -s /tmp/r3k/items0_fb.jsonl",
+   "do": [
+    "cd /home/claude/r3 && python3 tests/kitchen.py fallback"
+   ],
+   "expect": "forced plain-text run written",
+   "check_after": "test -s /tmp/r3k/items0_fb.jsonl",
+   "undo": "rm -f /tmp/r3k/items0_fb.jsonl",
+   "on_fail": [
+    "sites-down",
+    "disk-full"
+   ]
+  },
+  {
+   "id": "scout",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "test -s /tmp/r3k/scout.jsonl",
+   "do": [
+    "cd /home/claude/r3 && python3 tests/kitchen.py scout"
+   ],
+   "expect": "scout items written",
+   "check_after": "test -s /tmp/r3k/scout.jsonl",
+   "undo": "rm -f /tmp/r3k/scout.jsonl",
+   "on_fail": [
+    "sites-down",
+    "disk-full"
+   ]
+  },
+  {
+   "id": "post",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "test -s /tmp/r3k/convert/summary.json && test -s /tmp/r3k/graph.csv",
+   "do": [
+    "cd /home/claude/r3 && python3 tests/kitchen.py post"
+   ],
+   "expect": "converter + link graph outputs",
+   "check_after": "test -s /tmp/r3k/convert/summary.json && test -s /tmp/r3k/graph.csv",
+   "undo": "rm -rf /tmp/r3k/convert /tmp/r3k/graph.csv",
+   "on_fail": [
+    "disk-full",
+    "permission-denied"
+   ]
+  },
+  {
+   "id": "assert",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "grep -q 'ALL PASS' /tmp/r3k/check.txt",
+   "do": [
+    "cd /home/claude/r3 && python3 tests/check_kitchen.py > /tmp/r3k/check.txt 2>&1"
+   ],
+   "expect": "every kitchen check passes",
+   "check_after": "grep -q 'ALL PASS' /tmp/r3k/check.txt",
+   "undo": "rm -f /tmp/r3k/check.txt",
+   "on_fail": [
+    "disk-full"
+   ]
+  },
+  {
+   "id": "sites_down",
+   "target": "local kitchen (L1 FAKE sandbox)",
+   "check_before": "! curl -sf http://127.0.0.1:18201/robots.txt > /dev/null",
+   "do": [
+    "python3 /home/claude/r3/tests/kitchen.py down"
+   ],
+   "expect": "fake sites stopped",
+   "check_after": "! curl -sf http://127.0.0.1:18201/robots.txt > /dev/null",
+   "undo": "none: fake sites are throw-away",
+   "on_fail": [
+    "permission-denied"
+   ]
+  }
+ ],
+ "done_check": "grep -q 'ALL PASS' /tmp/r3k/check.txt && tail -3 /tmp/r3k/unit.txt | grep -q '^OK'",
+ "fixes": [
+  {
+   "name": "network-drop",
+   "match": "timed out|Temporary failure|Connection reset|Could not find a version",
+   "class": "INFRA",
+   "action": "wait:10",
+   "max": 3
+  },
+  {
+   "name": "port-in-use",
+   "match": "Address already in use|did not come up",
+   "class": "JOB",
+   "action": "run:python3 /home/claude/r3/tests/kitchen.py down",
+   "max": 2
+  },
+  {
+   "name": "sites-down",
+   "match": "Connection refused|ConnectionRefused",
+   "class": "JOB",
+   "action": "run:python3 /home/claude/r3/tests/kitchen.py up",
+   "max": 2
+  },
+  {
+   "name": "trafilatura-missing",
+   "match": "No module named .trafilatura.",
+   "class": "JOB",
+   "action": "next_method",
+   "max": 1
+  },
+  {
+   "name": "permission-denied",
+   "match": "Permission denied",
+   "class": "JOB",
+   "action": "run:mkdir -p /tmp/r3k",
+   "max": 2
+  },
+  {
+   "name": "disk-full",
+   "match": "No space left",
+   "class": "SAFETY",
+   "action": "stop"
+  }
+ ],
+ "faults": [
+  {
+   "name": "F1 network drop x2 (pip)",
+   "step": "deps",
+   "phase": "do",
+   "output": "ReadTimeoutError: timed out",
+   "times": 2
+  },
+  {
+   "name": "F2 port already in use",
+   "step": "sites_up",
+   "phase": "do",
+   "output": "OSError: Address already in use",
+   "times": 1
+  },
+  {
+   "name": "F3 trafilatura missing",
+   "step": "crawl",
+   "phase": "do",
+   "output": "ModuleNotFoundError: No module named 'trafilatura'",
+   "times": 1
+  },
+  {
+   "name": "F4 sites refused once",
+   "step": "scout",
+   "phase": "do",
+   "output": "Connection refused",
+   "times": 1
+  },
+  {
+   "name": "F5 permission denied (workdir)",
+   "step": "workdir",
+   "phase": "do",
+   "output": "mkdir: Permission denied",
+   "times": 1
+  },
+  {
+   "name": "F6 disk full",
+   "step": "unit",
+   "phase": "do",
+   "output": "No space left on device",
+   "times": 9,
+   "expect": "STOPPED_SAFE"
+  }
+ ],
+ "preflight": [
+  {
+   "name": "python3",
+   "check": "command -v python3"
+  },
+  {
+   "name": "scrapy",
+   "check": "command -v scrapy"
+  },
+  {
+   "name": "tmp-writable",
+   "check": "touch /tmp/r3k_probe && rm /tmp/r3k_probe"
+  }
+ ],
+ "snapshot": "ls -la /tmp/r3k 2>&1 | head; df -h /tmp | tail -1",
+ "code_sha256_16": "a94225274c40d6de"
+}

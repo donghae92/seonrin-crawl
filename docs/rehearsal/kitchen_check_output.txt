@@ -1,0 +1,35 @@
+PASS cap A<=10
+PASS cap B<=8
+PASS cap C<=12
+PASS A recent = 9 newest pages
+PASS A robots-denied page never requested
+PASS A denied page leaves a visible error row
+PASS B has blocked row
+PASS B outlinks recorded
+PASS C rotate slices disjoint
+PASS C slice sizes = cap
+PASS C 429 recorded as blocked
+PASS 429 answered exactly once and never retried
+PASS dead host leaves an error row
+PASS menu text removed
+PASS Korean author kept
+PASS date kept
+PASS fallback run: all xpath
+PASS fallback run fetches the same pages
+PASS scout A OK
+PASS scout C OK
+PASS scout B OK or BLOCKED
+PASS scout robots-denied host
+PASS scout dead host ERROR
+PASS scout hosts= argument works without a file
+PASS scout never fetched the denied site's pages
+PASS convert: docs and passages exist
+PASS convert: every passage 40..800 chars
+PASS convert: ids well-formed
+PASS convert: repeated rows rejected as duplicate
+PASS convert: blocked/error rows rejected
+PASS graph: A is linked from >= 2 seed sites
+PASS merge: one row per host, best tier wins
+PASS merge: non-https row rejected
+
+RESULT: ALL PASS

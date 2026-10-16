@@ -1,0 +1,12 @@
+{
+ "recipe": "seonrin-crawl-r3-core",
+ "fidelity": "L1-local-sandbox FAKE (fake sites on loopback; no real Zyte, no real websites)",
+ "t": 2,
+ "cases": 22,
+ "complete": 16,
+ "stopped_safe": 6,
+ "unhandled_or_mismatch": 0,
+ "certified": true,
+ "failures": [],
+ "recipe_hash": "0b900e887875e183"
+}

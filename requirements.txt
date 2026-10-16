@@ -1,3 +1,4 @@
-# Zyte's newest stack ships without setuptools, so the egg build failed with
-# "No module named 'setuptools'". Installing it here fixes that (2026-10-17 deploy log).
+# Zyte's newest stack ships without setuptools (egg build failed 2026-10-17): keep it.
 setuptools>=69,<81
+# main-text + author/date extraction; the spiders fall back to plain text if this cannot be imported
+trafilatura>=1.12

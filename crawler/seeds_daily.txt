@@ -1,0 +1,13 @@
+# Daily tier: places that publish new things every day. mode=recent reads the newest sitemap entries first.
+# Format: URL key=value ...   (cap = max pages per run, mode = auto|recent|rotate|links)
+https://www.korea.kr/news/policyNewsList.do cap=80 mode=recent
+https://www.nts.go.kr/ cap=60 mode=recent
+https://www.moleg.go.kr/ cap=60 mode=recent
+https://www.fsc.go.kr/ cap=60 mode=recent
+https://www.fss.or.kr/ cap=60 mode=recent
+https://www.mss.go.kr/ cap=60 mode=recent
+https://www.bizinfo.go.kr/ cap=60 mode=recent
+https://www.mof.go.kr/index.do cap=40 mode=recent
+https://www.mafra.go.kr/home/index.do cap=40 mode=recent
+https://www.rda.go.kr/ cap=40 mode=recent
+https://www.daegu.go.kr/ cap=40 mode=recent

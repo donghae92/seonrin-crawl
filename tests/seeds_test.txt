@@ -1,0 +1,4 @@
+http://127.0.0.1:18201/ cap=10 mode=recent
+http://localhost:18202/ cap=8 mode=links
+http://127.0.0.1:18203/ cap=12 mode=rotate
+http://127.0.0.1:18299/ cap=5

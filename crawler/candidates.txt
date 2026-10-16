@@ -1,0 +1,1 @@
+# Candidate sites for the scout spider: one URL or host per line. Filled from the research output.

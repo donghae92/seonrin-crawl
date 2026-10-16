@@ -1,0 +1,7 @@
+# Monthly tier: reference works that rarely change.
+https://plato.stanford.edu/ cap=60 mode=rotate
+https://iep.utm.edu/ cap=60 mode=rotate
+https://www.awwwards.com/ cap=40 mode=rotate
+https://fontsinuse.com/ cap=40 mode=rotate
+https://www.policyuncertainty.com/ cap=40 mode=links
+https://www.matteoiacoviello.com/gpr.htm cap=5 mode=links
