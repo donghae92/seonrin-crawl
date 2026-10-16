@@ -1,0 +1,1 @@
+# Zyte Scrapy Cloud already provides scrapy; nothing extra needed.

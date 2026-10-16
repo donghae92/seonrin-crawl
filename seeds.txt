@@ -1,0 +1,2 @@
+# One URL per line. The collector never leaves these domains.
+# Empty on purpose: fill in the sites you decided to collect from.
