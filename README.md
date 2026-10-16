@@ -26,7 +26,7 @@ Spider `seeded` with argument `tier=daily` every day · `tier=weekly` weekly · 
 
 ## Tools (`tools/`, stdlib only)
 `site_report.py` per-site health of a run · `outlink_graph.py` candidate sites from links · `scout_report.py` verdict per candidate ·
-`merge_candidates.py` research CSVs → candidate list · `to_index_spec.py` items → docs/passages (night-work chunk rules; spec-side fields `--source/--grade` must be validated against `~/index-spec` before any ingest)
+`merge_candidates.py` research CSVs → candidate list · `to_index_spec.py` items + `--category-map` → spec records doc/passage/lexical/rejected built with `~/index-spec/index_spec_ref.py` (v0.2; validated against schemas.json; hosts without a category are rejected as `seed_out`)
 
 ## Tests
 `python3 -m unittest tests.test_units` (11) · rehearsal kitchen: `tests/kitchen.py up|crawl|fallback|scout|post|down` + `tests/check_kitchen.py` (33 checks on five fake sites).

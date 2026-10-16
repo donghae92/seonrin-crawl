@@ -74,7 +74,10 @@ def post():
     with open(items_all, "w") as f:
         for n in ("items0.jsonl", "items1.jsonl", "items0.jsonl"):
             f.write(open(os.path.join(DIR, n)).read())
-    steps = [[sys.executable, os.path.join(tools, "to_index_spec.py"), items_all, "--out", os.path.join(DIR, "convert")],
+    cmap = os.path.join(DIR, "category_map.txt")
+    with open(cmap, "w") as f:
+        f.write("127.0.0.1:18201 life.consumer\nlocalhost:18202 life.consumer\n127.0.0.1:18203 life.consumer\n")
+    steps = [[sys.executable, os.path.join(tools, "to_index_spec.py"), items_all, "--out", os.path.join(DIR, "convert"), "--category-map", cmap],
              [sys.executable, os.path.join(tools, "outlink_graph.py"), items_all, "--out", os.path.join(DIR, "graph.csv"), "--min-sources", "2"],
              [sys.executable, os.path.join(tools, "scout_report.py"), os.path.join(DIR, "scout.jsonl")],
              [sys.executable, os.path.join(tools, "site_report.py"), items_all]]

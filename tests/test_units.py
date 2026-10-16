@@ -3,7 +3,10 @@ from datetime import date
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [ROOT, os.path.join(ROOT, "tools")]
 from crawler.common import choose_urls, extract_page, parse_seed_lines, slice_index, top_outlink_hosts
-from to_index_spec import chunk_text, convert, trace_priority
+from to_index_spec import convert, load_spec, trace_priority
+
+SPEC_DIR = os.environ.get("INDEX_SPEC") or os.path.expanduser("~/index-spec")
+HAVE_SPEC = os.path.isfile(os.path.join(SPEC_DIR, "index_spec_ref.py"))
 
 
 class Units(unittest.TestCase):
@@ -58,25 +61,38 @@ class Units(unittest.TestCase):
 
     def test_chunk_rules(self):
         text = ("가나다라마바사 아자차카타파하다. " * 200)
-        ps = chunk_text(text)
-        self.assertTrue(all(40 <= len(p) <= 800 for p in ps))
-        self.assertTrue(all(len(p) >= 400 for p in ps[:-1]))                 # keeps at least half
-        a, b = ps[0], ps[1]
-        self.assertTrue(any(a[-k:] == b[:k] for k in range(100, 131)))       # ~120-char overlap
-        self.assertEqual(chunk_text("짧다"), [])
+        if not HAVE_SPEC:
+            self.skipTest("~/index-spec not found")
+        spec = load_spec(SPEC_DIR)
+        ps = spec.chunk_text(text)
+        self.assertTrue(len(ps) > 1 and all(40 <= len(p) <= 800 for p in ps))
+        self.assertEqual(spec.chunk_text("짧다"), [])
 
-    def test_convert_ids_dedupe_and_rejects(self):
+    def test_convert_matches_spec_schemas(self):
+        if not HAVE_SPEC:
+            self.skipTest("~/index-spec not found")
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("jsonschema not installed")
+        import json
+        spec = load_spec(SPEC_DIR)
+        S = json.load(open(os.path.join(SPEC_DIR, "schemas.json"), encoding="utf-8"))
         long = "공식 안내 문장입니다. " * 60
-        rows = [{"url": "https://a.go.kr/1", "host": "a.go.kr", "status": 200, "text": long, "content_hash": "ab" * 32, "author": "기관", "published": "2026-10-01"},
-                {"url": "https://a.go.kr/2", "host": "a.go.kr", "status": 200, "text": long, "content_hash": "ab" * 32},
+        rows = [{"url": "https://a.go.kr/1", "host": "a.go.kr", "status": 200, "text": long, "author": "기관", "published": "2026-10-01", "fetched_at": "2026-10-16T18:53:27+00:00", "lang": "ko"},
+                {"url": "https://a.go.kr/2", "host": "a.go.kr", "status": 200, "text": long},
                 {"url": "https://b.com/3", "host": "b.com", "status": 403, "blocked": True},
                 {"url": "https://b.com/4", "host": "b.com", "status": None, "error": "boom"},
-                {"url": "https://b.com/5", "host": "b.com", "status": 200, "text": "x", "content_hash": "cd" * 32}]
-        docs, ps, rej = convert(rows, "web_crawl", "B", 200)
+                {"url": "https://b.com/5", "host": "b.com", "status": 200, "text": "x"},
+                {"url": "https://nocat.kr/6", "host": "nocat.kr", "status": 200, "text": long + "다른 내용 " * 40}]
+        docs, ps, lex, rej, prio = convert(rows, spec, {"a.go.kr": "life.consumer", "b.com": "life.consumer"})
         self.assertEqual(len(docs), 1)
-        self.assertEqual(sorted(r["why"] for r in rej), ["blocked", "duplicate", "error", "too_short"])
-        self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}:[0-9a-f]{8}:\d{4}", p["passage_id"]) for p in ps))
-        self.assertEqual(docs[0]["trace_priority"], 3); self.assertFalse(docs[0]["lexical_only"])
+        self.assertEqual(sorted(r["reason"] for r in rej), ["blocked", "duplicate", "empty", "fetch_fail", "seed_out"])
+        for kind, recs in (("doc", docs), ("passage", ps), ("lexical", lex), ("rejected", rej)):
+            for r in recs:
+                jsonschema.validate(r, S[kind])
+        self.assertEqual(docs[0]["fetched_at"], "2026-10-17T03:53:27+09:00")
+        self.assertEqual(prio[docs[0]["doc_id"]], 3)
         self.assertEqual(trace_priority("b.com", None, None), 0)
 
     def test_tier_files_load_without_network(self):

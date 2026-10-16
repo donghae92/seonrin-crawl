@@ -65,15 +65,19 @@ vh = verdicts(rows("scout_hosts.jsonl"))
 ck("scout hosts= argument works without a file", (vh[A][0], vh[D][0], vh[DEAD][0]) == ("OK", "ROBOTS_DENIED", "ERROR"), vh)
 ck("scout never fetched the denied site's pages", {l for l in log if l.startswith("18204 ")} == {"18204 /robots.txt"}, {l for l in log if l.startswith("18204 ")})
 # 8 converter
-docs = [json.loads(l) for l in open(os.path.join(DIR, "convert", "docs.jsonl"))]
-ps = [json.loads(l) for l in open(os.path.join(DIR, "convert", "passages.jsonl"))]
-rej = [json.loads(l) for l in open(os.path.join(DIR, "convert", "rejected.jsonl"))]
-ck("convert: docs and passages exist", len(docs) > 0 and len(ps) >= len(docs))
-ck("convert: every passage 40..800 chars", all(40 <= p["chars"] <= 800 for p in ps))
-ck("convert: ids well-formed", all(re.fullmatch(r"[0-9a-f]{64}:[0-9a-f]{8}:\d{4}", p["passage_id"]) for p in ps))
-ck("convert: repeated rows rejected as duplicate", sum(r["why"] == "duplicate" for r in rej) >= len({d["doc_id"] for d in docs}) - 1,
-   collections.Counter(r["why"] for r in rej))
-ck("convert: blocked/error rows rejected", {"blocked", "error"} <= {r["why"] for r in rej}, collections.Counter(r["why"] for r in rej))
+SPEC_OK = os.path.isfile(os.path.join(os.environ.get("INDEX_SPEC") or os.path.expanduser("~/index-spec"), "index_spec_ref.py"))
+if SPEC_OK:
+    docs = [json.loads(l) for l in open(os.path.join(DIR, "convert", "docs.jsonl"))]
+    ps = [json.loads(l) for l in open(os.path.join(DIR, "convert", "passages.jsonl"))]
+    rej = [json.loads(l) for l in open(os.path.join(DIR, "convert", "rejected.jsonl"))]
+    ck("convert: docs and passages exist", len(docs) > 0 and len(ps) >= len(docs))
+    ck("convert: every passage 40..800 chars", all(40 <= len(p["text"]) <= 800 for p in ps))
+    ck("convert: ids well-formed", all(re.fullmatch(r"[0-9a-f]{64}:[0-9a-f]{8}:\d{4}", p["passage_id"]) for p in ps))
+    ck("convert: repeated rows rejected as duplicate", sum(r["reason"] == "duplicate" for r in rej) >= len({d["doc_id"] for d in docs}) - 1,
+       collections.Counter(r["reason"] for r in rej))
+    ck("convert: blocked/error rows rejected", {"blocked", "fetch_fail"} <= {r["reason"] for r in rej}, collections.Counter(r["reason"] for r in rej))
+else:
+    print("SKIP convert checks: ~/index-spec not found")
 # 9 outlink graph
 g = list(csv.DictReader(open(os.path.join(DIR, "graph.csv"))))
 ck("graph: A is linked from >= 2 seed sites", any(x["host"] == A and int(x["distinct_seed_sites"]) >= 2 for x in g), g[:3])
