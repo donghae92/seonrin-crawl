@@ -16,9 +16,11 @@ AUTOTHROTTLE_START_DELAY = 3
 AUTOTHROTTLE_MAX_DELAY = 30
 
 RETRY_TIMES = 1            # no hammering
+RETRY_HTTP_CODES = [500, 502, 503, 504, 522, 524, 408]  # 403/429 are never retried: blocked = stop
 COOKIES_ENABLED = False
 DEPTH_LIMIT = 1            # seed page + links one step away, same domain only
-CLOSESPIDER_PAGECOUNT = 200  # safety ceiling per run; raise by hand
+PER_DOMAIN_MAX = 25        # max pages followed per domain per run (seed page always read)
+CLOSESPIDER_PAGECOUNT = 1200  # safety ceiling per run; raise by hand
 DOWNLOAD_TIMEOUT = 30
 TELNETCONSOLE_ENABLED = False
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"

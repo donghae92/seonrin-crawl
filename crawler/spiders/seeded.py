@@ -23,6 +23,7 @@ class SeededSpider(scrapy.Spider):
                           if l.strip() and not l.strip().startswith("#")]
         self.allowed_domains = sorted({urlparse(u).hostname for u in self.seed_urls if urlparse(u).hostname})
         self.blocked = set()
+        self.counts = {}  # pages read per domain (fair share: no site eats the whole run)
         self.link_ex = LinkExtractor()  # domain filter is done by hostname below (works with ports too)
 
     async def start(self):
@@ -46,6 +47,7 @@ class SeededSpider(scrapy.Spider):
         meta = lambda *names: next((response.xpath(f'//meta[@{k}="{n}"]/@content').get()
                                     for n in names for k in ("name", "property")
                                     if response.xpath(f'//meta[@{k}="{n}"]/@content').get()), None)
+        self.counts[host] = self.counts.get(host, 0) + 1
         yield {
             "url": response.request.url, "final_url": response.url, "status": response.status,
             "fetched_at": datetime.now(timezone.utc).isoformat(), "depth": depth,
@@ -56,7 +58,7 @@ class SeededSpider(scrapy.Spider):
             "text": text[:20000],
             "content_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         }
-        if depth < 1:
+        if depth < 1 and self.counts[host] < self.settings.getint("PER_DOMAIN_MAX", 25):
             for link in self.link_ex.extract_links(response):
                 h = urlparse(link.url).hostname
                 if h not in self.allowed_domains or h in self.blocked:
