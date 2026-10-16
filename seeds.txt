@@ -1,2 +1,5 @@
-# One URL per line. The collector never leaves these domains.
-# Empty on purpose: fill in the sites you decided to collect from.
+# One URL per line. The collector never leaves these domains (robots.txt checked 2026-10-16: none blocks generic crawlers).
+https://www.korea.kr/news/policyNewsList.do
+https://www.nts.go.kr/
+https://www.fss.or.kr/
+https://www.moleg.go.kr/

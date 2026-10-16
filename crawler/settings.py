@@ -5,7 +5,7 @@ BOT_NAME = "seonrin-index-collector"
 SPIDER_MODULES = ["crawler.spiders"]
 NEWSPIDER_MODULE = "crawler.spiders"
 
-USER_AGENT = "seonrin-index-collector/1.0 (+mailto:CHANGE-ME@example.com; personal search index, obeys robots.txt)"
+USER_AGENT = "seonrin-index-collector/1.0 (+mailto:weebm13@gmail.com; personal search index, obeys robots.txt)"
 ROBOTSTXT_OBEY = True
 
 CONCURRENT_REQUESTS = 4
