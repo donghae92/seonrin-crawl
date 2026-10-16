@@ -1,1 +1,3 @@
-# Zyte Scrapy Cloud already provides scrapy; nothing extra needed.
+# Zyte's newest stack ships without setuptools, so the egg build failed with
+# "No module named 'setuptools'". Installing it here fixes that (2026-10-17 deploy log).
+setuptools>=69,<81

@@ -1,4 +1,5 @@
 import hashlib
+import pkgutil
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -10,16 +11,17 @@ BLOCK_CODES = (401, 403, 429, 451)
 
 
 class SeededSpider(scrapy.Spider):
-    """Reads seeds.txt (one URL per line, # comments). Stays on seed domains."""
+    """Reads crawler/seeds.txt (one URL per line, # comments). Stays on seed domains."""
     name = "seeded"
     handle_httpstatus_list = list(BLOCK_CODES)
 
-    def __init__(self, seeds="seeds.txt", *a, **kw):
+    def __init__(self, seeds=None, *a, **kw):
         super().__init__(*a, **kw)
-        p = Path(seeds)
-        if not p.is_absolute():
-            p = Path(__file__).resolve().parents[2] / seeds
-        self.seed_urls = [l.strip() for l in p.read_text(encoding="utf-8").splitlines()
+        if seeds:  # local test: -a seeds=/path/to/file
+            text = Path(seeds).read_text(encoding="utf-8")
+        else:      # normal: crawler/seeds.txt, packed inside the deployed egg
+            text = pkgutil.get_data("crawler", "seeds.txt").decode("utf-8")
+        self.seed_urls = [l.strip() for l in text.splitlines()
                           if l.strip() and not l.strip().startswith("#")]
         self.allowed_domains = sorted({urlparse(u).hostname for u in self.seed_urls if urlparse(u).hostname})
         self.blocked = set()
@@ -28,7 +30,7 @@ class SeededSpider(scrapy.Spider):
 
     async def start(self):
         if not self.seed_urls:
-            self.logger.error("seeds.txt is empty - add URLs first. Nothing collected.")
+            self.logger.error("crawler/seeds.txt is empty - add URLs first. Nothing collected.")
             return
         for u in self.seed_urls:
             yield scrapy.Request(u, callback=self.parse, cb_kwargs={"depth": 0})

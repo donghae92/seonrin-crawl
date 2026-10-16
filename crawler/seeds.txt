@@ -1,0 +1,56 @@
+# One URL per line. The collector never leaves these domains.
+# Kept only sites whose robots.txt allows generic bots AND whose page gives readable text (checked 2026-10-17).
+
+# --- law / finance / tax (first batch)
+https://www.korea.kr/news/policyNewsList.do
+https://www.nts.go.kr/
+https://www.fss.or.kr/
+https://www.moleg.go.kr/
+
+# --- geopolitics / world economy
+https://www.matteoiacoviello.com/gpr.htm
+https://www.policyuncertainty.com/
+https://polymarket.com/
+https://finance.yahoo.com/
+https://www.hankyung.com/
+
+# --- portfolio
+https://www.dataroma.com/m/home.php
+https://www.portfoliovisualizer.com/
+https://finviz.com/
+https://www.tradingview.com/
+
+# --- welfare (housing, youth, insurance, local)
+https://www.easylaw.go.kr/CSP/Main.laf
+https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do
+https://www.youthcenter.go.kr/
+https://www.nhis.or.kr/nhis/index.do
+https://www.daegu.go.kr/
+
+# --- small business: support programs and loans
+https://www.bizinfo.go.kr/
+https://www.mss.go.kr/
+https://www.fsc.go.kr/
+
+# --- farmers and fishers: welfare and programs
+https://www.nongsaro.go.kr/
+https://www.mafra.go.kr/home/index.do
+https://www.mof.go.kr/index.do
+https://www.rda.go.kr/
+
+# --- OEM / price
+https://www.alibaba.com/
+https://www.danawa.com/
+https://www.enuri.com/
+https://www.compuzone.co.kr/
+
+# --- LLM
+https://artificialanalysis.ai/
+https://openrouter.ai/
+https://www.anthropic.com/news
+
+# --- philosophy / aesthetics
+https://plato.stanford.edu/
+https://iep.utm.edu/
+https://www.awwwards.com/
+https://fontsinuse.com/
