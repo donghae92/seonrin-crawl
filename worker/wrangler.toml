@@ -1,0 +1,7 @@
+name = "zyte-landing"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[[r2_buckets]]
+binding = "RAW"
+bucket_name = "seonrin-index-raw"

@@ -23,3 +23,6 @@ TELNETCONSOLE_ENABLED = False
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 FEED_EXPORT_ENCODING = "utf-8"
 LOG_LEVEL = "INFO"
+
+# raw items also go to R2 via the landing Worker; the pipeline switches itself off without LAND_URL/LAND_TOKEN
+ITEM_PIPELINES = {"crawler.pipelines.LandingPipeline": 800}
