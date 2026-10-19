@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import scrapy
+from scrapy.exceptions import IgnoreRequest
 from scrapy.linkextractors import LinkExtractor
 from scrapy.utils.sitemap import Sitemap, sitemap_urls_from_robots
 
@@ -11,7 +12,16 @@ from crawler.common import (BLOCK_CODES, TIER_DAYS, choose_urls, content_hash, e
                             now_iso, parse_seed_lines, slice_index, top_outlink_hosts)
 
 
+SM_DEAD_RUN = 10                                   # this many 4xx/5xx in a row from a site's sitemap pages = the sitemap is stale, stop fetching them
 SM_KIDS, SM_MAX, ENTRIES_MAX = 15, 20, 200000   # sitemap-index children read per level / per site, entries kept per site
+
+
+class SkipDeadSitemap:
+    """Downloader middleware: drop queued sitemap pages of a site whose sitemap went stale (see SM_DEAD_RUN)."""
+    def process_request(self, request, spider):
+        d = getattr(spider, "doms", {}).get(request.meta.get("dom"))
+        if d is not None and d.skip and request.meta.get("src") == "sitemap":
+            raise IgnoreRequest("stale sitemap skipped: " + d.host)
 
 
 class Dom:
@@ -23,6 +33,7 @@ class Dom:
         self.sched = 0                             # page requests scheduled so far (strict cap counts HERE)
         self.entries, self.pending, self.sm_seen = [], 0, 0
         self.blocked = self.dead = False
+        self.bad_streak, self.skip = 0, False       # consecutive sitemap pages that came back 4xx/5xx; skip = stop fetching this site's sitemap pages
         self.seen = set()                          # link URLs already scheduled (a repeated link must not eat the cap)
 
 
@@ -129,6 +140,12 @@ class SeededSpider(scrapy.Spider):
         d = self.doms[response.meta["dom"]]
         base = {"url": response.request.url, "final_url": response.url, "host": d.host, "status": response.status,
                 "fetched_at": now_iso(), "depth": response.meta["depth"], "source": response.meta["src"]}
+        if response.meta["src"] == "sitemap":
+            d.bad_streak = d.bad_streak + 1 if response.status >= 400 else 0
+            if d.bad_streak >= SM_DEAD_RUN and not d.skip:
+                d.skip = True
+                self.logger.warning("sitemap pages on %s answer %s %d times in a row: skipping the rest of its sitemap pages",
+                                    d.host, response.status, d.bad_streak)
         if response.status in BLOCK_CODES:
             d.blocked = True
             yield {**base, "blocked": True}; return
@@ -191,6 +208,8 @@ class SeededSpider(scrapy.Spider):
                "error": f"unreachable: {failure.value.__class__.__name__}"}
 
     def on_page_error(self, failure):
+        if failure.check(IgnoreRequest):          # dropped on purpose by SkipDeadSitemap; not an item
+            return
         d = self.doms.get(failure.request.meta.get("dom"))
         yield {"url": failure.request.url, "host": d.host if d else None, "status": None, "fetched_at": now_iso(),
                "error": f"{failure.value.__class__.__name__}"}

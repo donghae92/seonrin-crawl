@@ -112,6 +112,28 @@ class Units(unittest.TestCase):
         self.assertEqual(len(SeededSpider(tier="weekly", cap="7").doms["finviz.com"].__dict__) > 0, True)
         self.assertEqual(SeededSpider(tier="weekly", cap="7").doms["finviz.com"].cap, 7)
 
+    def test_stale_sitemap_pages_are_skipped_after_a_run_of_errors(self):
+        from scrapy.exceptions import IgnoreRequest
+        from scrapy.http import HtmlResponse, Request
+        from crawler.spiders.seeded import SeededSpider, SkipDeadSitemap, SM_DEAD_RUN
+        sp = SeededSpider(tier="weekly")
+        host = "www.nongsaro.go.kr"
+        d = sp.doms[host]
+        def feed(status):
+            rq = Request("https://%s/x" % host, meta={"dom": host, "depth": 1, "src": "sitemap"})
+            list(sp.parse_page(HtmlResponse(rq.url, status=status, body=b"", request=rq)))
+        for _ in range(SM_DEAD_RUN - 1):
+            feed(404)
+        self.assertFalse(d.skip)
+        feed(200)                                   # a good page resets the run
+        for _ in range(SM_DEAD_RUN):
+            feed(404)
+        self.assertTrue(d.skip)
+        mw = SkipDeadSitemap()
+        with self.assertRaises(IgnoreRequest):
+            mw.process_request(Request("https://%s/y" % host, meta={"dom": host, "src": "sitemap"}), sp)
+        self.assertIsNone(mw.process_request(Request("https://%s/" % host, meta={"dom": host, "src": "links"}), sp))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
