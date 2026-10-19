@@ -28,7 +28,7 @@ def parse_seed_lines(text):
     return out
 
 
-def choose_urls(entries, mode, cap, slice_idx):
+def choose_urls(entries, mode, cap, slice_idx, since=None):
     """entries: [(loc, lastmod|None)]. recent = newest lastmod first; rotate = a stateless slice
     that moves forward with slice_idx and wraps around. Returns at most `cap` distinct urls."""
     seen, uniq = set(), []
@@ -37,10 +37,12 @@ def choose_urls(entries, mode, cap, slice_idx):
             seen.add(loc); uniq.append((loc, lm))
     if not uniq or cap <= 0:
         return []
-    if mode == "recent" and sum(1 for _, lm in uniq if lm) * 2 < len(uniq):
+    if mode == "recent" and not since and sum(1 for _, lm in uniq if lm) * 2 < len(uniq):
         mode = "rotate"                      # lastmod missing for most entries: recent would be arbitrary
     if mode == "recent":
         dated = sorted([e for e in uniq if e[1]], key=lambda e: (e[1], e[0]), reverse=True)
+        if since:                              # fresh-only run: ISO date strings compare as text; undated pages are not "fresh"
+            return [loc for loc, lm in dated if lm[:len(since)] >= since][:cap]
         undated = sorted([e for e in uniq if not e[1]], key=lambda e: e[0])
         return [loc for loc, _ in (dated + undated)[:cap]]
     uniq.sort(key=lambda e: e[0])

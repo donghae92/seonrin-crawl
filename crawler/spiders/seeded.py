@@ -11,6 +11,9 @@ from crawler.common import (BLOCK_CODES, TIER_DAYS, choose_urls, content_hash, e
                             now_iso, parse_seed_lines, slice_index, top_outlink_hosts)
 
 
+SM_KIDS, SM_MAX, ENTRIES_MAX = 15, 20, 200000   # sitemap-index children read per level / per site, entries kept per site
+
+
 class Dom:
     def __init__(self, seed):
         self.host, self.origin, self.seed_url = seed["host"], seed["origin"], seed["url"]
@@ -20,16 +23,24 @@ class Dom:
         self.sched = 0                             # page requests scheduled so far (strict cap counts HERE)
         self.entries, self.pending, self.sm_seen = [], 0, 0
         self.blocked = self.dead = False
+        self.seen = set()                          # link URLs already scheduled (a repeated link must not eat the cap)
 
 
 class SeededSpider(scrapy.Spider):
     """Reads seeds_<tier>.txt. Per site: sitemap (recent / rotating slice) else one level of links.
-    Never leaves the seed host. Hard cap on scheduled pages per site. Block or error = stop, record it."""
+    Never leaves the seed host. Hard cap on scheduled pages per site. Block or error = stop, record it.
+    Run arguments (all optional, so a controller can steer without a redeploy):
+      since=YYYY-MM-DD  recent mode keeps only sitemap entries modified on/after that day (fresh-only run)
+      mode=rotate       force sitemap rotation on every site whose seed mode is not "links" (backfill run)
+      slice=N           rotation cursor (the controller increments it, so consecutive runs cover consecutive windows)
+      max_depth=N       link-following depth for links-mode sites (default 3), shallowest pages first"""
     name = "seeded"
     handle_httpstatus_list = list(range(400, 600))   # 3xx must stay with the redirect middleware
 
-    def __init__(self, seeds=None, tier="all", slice=None, cap=None, *a, **kw):
+    def __init__(self, seeds=None, tier="all", slice=None, cap=None, since=None, mode=None, max_depth=3, *a, **kw):
         super().__init__(*a, **kw)
+        self.since = since or None
+        self.max_depth = int(max_depth)
         if seeds:
             text = Path(seeds).read_text(encoding="utf-8")
             self.tier = tier if tier in TIER_DAYS else "daily"
@@ -42,6 +53,8 @@ class SeededSpider(scrapy.Spider):
         for sd in parse_seed_lines(text):
             if cap:
                 sd["opts"]["cap"] = cap
+            if mode and sd["opts"].get("mode") != "links":
+                sd["opts"]["mode"] = mode
             self.doms.setdefault(sd["host"], Dom(sd))
         self.link_ex = LinkExtractor()
 
@@ -72,14 +85,15 @@ class SeededSpider(scrapy.Spider):
             sm = Sitemap(gunzip_if_needed(response.body))
             items = [x for x in sm if x.get("loc")]
             if sm.type == "sitemapindex":
-                kids = sorted(items, key=lambda x: x.get("lastmod") or "", reverse=True)[:5]
+                kids = sorted(items, key=lambda x: x.get("lastmod") or "", reverse=True)[:SM_KIDS]
                 for k in kids:
-                    if urlparse(k["loc"]).netloc == d.host and response.meta["lvl"] < 2 and d.sm_seen < 8:
+                    if urlparse(k["loc"]).netloc == d.host and response.meta["lvl"] < 2 and d.sm_seen < SM_MAX:
                         d.sm_seen += 1; d.pending += 1
                         yield scrapy.Request(k["loc"], callback=self.on_sitemap, errback=self.on_sitemap_fail,
                                              meta={"dom": d.host, "lvl": response.meta["lvl"] + 1})
             else:
-                d.entries += [(x["loc"], x.get("lastmod")) for x in items if urlparse(x["loc"]).netloc == d.host][:50000]
+                room = max(0, ENTRIES_MAX - len(d.entries))
+                d.entries += [(x["loc"], x.get("lastmod")) for x in items if urlparse(x["loc"]).netloc == d.host][:min(50000, room)]
         except Exception as e:
             self.logger.info("sitemap skipped %s: %s", response.url, e)
         yield from self.maybe_finish(d)
@@ -92,8 +106,11 @@ class SeededSpider(scrapy.Spider):
     def maybe_finish(self, d):
         if d.pending > 0 or d.sched > 0:
             return
-        urls = choose_urls(d.entries, d.mode if d.mode in ("recent", "rotate") else "recent", d.cap, self.slice_idx) if d.entries else []
+        urls = choose_urls(d.entries, d.mode if d.mode in ("recent", "rotate") else "recent", d.cap, self.slice_idx,
+                           self.since) if d.entries else []
         if not urls:
+            if self.since and d.entries:          # fresh-only run and nothing fresh: that is a result, not a reason to crawl links
+                self.logger.info("nothing newer than %s on %s", self.since, d.host); return
             yield from self.start_links(d); return
         for u in urls:
             if d.sched >= d.cap:
@@ -136,14 +153,17 @@ class SeededSpider(scrapy.Spider):
                "lang": response.xpath("//html/@lang").get(), "extractor": ex["extractor"], "text": ex["text"],
                "content_hash": content_hash(ex["text"]), "outlink_hosts": top_outlink_hosts(d.host, links),
                "site_name": meta("og:site_name")}
-        if response.meta["src"] == "seed" and not d.blocked:
+        depth = response.meta["depth"]
+        if response.meta["src"] in ("seed", "links") and depth < self.max_depth and not d.blocked:
             for u in links:
                 if d.sched >= d.cap:
                     break
-                if urlparse(u).netloc == d.host and u.split("#")[0] != d.seed_url:
+                u = u.split("#")[0]
+                if urlparse(u).netloc == d.host and u != d.seed_url and u not in d.seen:
+                    d.seen.add(u)
                     d.sched += 1
-                    yield scrapy.Request(u.split("#")[0], callback=self.parse_page, errback=self.on_page_error,
-                                         meta={"dom": d.host, "depth": 1, "src": "links"})
+                    yield scrapy.Request(u, callback=self.parse_page, errback=self.on_page_error, priority=-(depth + 1),
+                                         meta={"dom": d.host, "depth": depth + 1, "src": "links"})
 
     @staticmethod
     def json_ld(response):

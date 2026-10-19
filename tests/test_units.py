@@ -31,6 +31,16 @@ class Units(unittest.TestCase):
         self.assertEqual(s3, ["u09", "u00", "u01"])            # wraps around, still 3 distinct
         self.assertEqual(len(choose_urls(e, "rotate", 20, 7)), 10)
 
+    def test_since_keeps_only_fresh_dated_entries(self):
+        e = [("u1", "2026-10-01"), ("u2", "2026-10-18T03:00:00Z"), ("u3", None), ("u4", "2026-10-19")]
+        self.assertEqual(choose_urls(e, "recent", 10, 0, "2026-10-18"), ["u4", "u2"])
+        self.assertEqual(choose_urls(e, "recent", 1, 0, "2026-10-18"), ["u4"])
+        self.assertEqual(choose_urls(e, "recent", 10, 0, "2026-10-25"), [])
+
+    def test_since_does_not_turn_sparse_lastmod_into_rotate(self):
+        e = [("u%d" % i, None) for i in range(9)] + [("v", "2026-10-19")]
+        self.assertEqual(choose_urls(e, "recent", 5, 0, "2026-10-19"), ["v"])
+
     def test_slice_index_moves_with_tier_period(self):
         d = date(2026, 10, 17)
         self.assertEqual(slice_index("daily", d), d.toordinal())
