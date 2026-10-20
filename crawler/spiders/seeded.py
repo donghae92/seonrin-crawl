@@ -1,5 +1,6 @@
 import json
 import pkgutil
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -48,11 +49,18 @@ class SeededSpider(scrapy.Spider):
     name = "seeded"
     handle_httpstatus_list = list(range(400, 600))   # 3xx must stay with the redirect middleware
 
-    def __init__(self, seeds=None, tier="all", slice=None, cap=None, since=None, mode=None, max_depth=3, *a, **kw):
+    def __init__(self, seeds=None, tier="all", slice=None, cap=None, since=None, mode=None, max_depth=3,
+                 seedlines=None, lesson=None, *a, **kw):
         super().__init__(*a, **kw)
         self.since = since or None
         self.max_depth = int(max_depth)
-        if seeds:
+        # curriculum lesson (tools/zyte_curriculum.py): the job carries its own places as "URL key=value" lines joined by "|",
+        # and a lesson name that gives its landing folder (zyte/seeded/lesson-<name>/<job>/)
+        self.label = ("lesson-" + re.sub(r"[^A-Za-z0-9._-]", "-", str(lesson))[:40]) if lesson else None
+        if seedlines:
+            text = "\n".join(seedlines.split("|"))
+            self.tier = tier if tier in TIER_DAYS else "daily"
+        elif seeds:
             text = Path(seeds).read_text(encoding="utf-8")
             self.tier = tier if tier in TIER_DAYS else "daily"
         else:

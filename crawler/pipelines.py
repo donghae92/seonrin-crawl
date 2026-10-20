@@ -78,7 +78,7 @@ class LandingPipeline:
         return pipe
 
     def bind(self, spider):
-        tier = getattr(spider, "tier", None) or "all"
+        tier = getattr(spider, "label", None) or getattr(spider, "tier", None) or "all"   # a curriculum lesson names its own folder
         self.prefix = f"zyte/{spider.name}/{tier}/{job_slug()}/"
         log.info("landing on: %s batch=%d", self.prefix, self.batch)
 

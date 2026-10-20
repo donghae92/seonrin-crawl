@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>맥북모니터링</title>
+<style>
+:root{--bg:#fafaf8;--ink:#111;--mute:#6b6b66;--line:#d9d8d2;--bar:#2f6f4e;--back:#e6e5df;--bad:#b3261e;--warn:#a8650a}
+@media (prefers-color-scheme:dark){:root{--bg:#101112;--ink:#ececea;--mute:#9a9a94;--line:#2c2d30;--bar:#6fcf97;--back:#26272a;--bad:#ff7a70;--warn:#e0a24a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;line-height:1.4}
+main{max-width:56rem;margin:0 auto;padding:1.2rem 1.2rem 2rem}
+.top{display:flex;justify-content:space-between;color:var(--mute);font-size:.85rem}
+h1{font-size:2rem;margin:.6rem 0 .1rem;font-weight:700}
+.sub{color:var(--mute);margin-bottom:1.2rem}
+.warn{display:none;padding:.5rem .8rem;margin:.8rem 0;border:2px solid var(--bad);color:var(--bad);border-radius:8px}
+.g{margin:1rem 0}
+.g .l{display:flex;justify-content:space-between;font-size:1rem}
+.g .t{height:1.4rem;background:var(--back);border-radius:.7rem;overflow:hidden;margin-top:.3rem}
+.g .f{height:100%;background:var(--bar);width:0;transition:width .8s}
+pre{margin:1.4rem 0 0;padding:.8rem;border:1px solid var(--line);border-radius:8px;font:.85rem/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;max-height:26rem;overflow:auto}
+.w{color:var(--warn)}
+</style>
+</head>
+<body>
+<main>
+<div class="top"><span id="at"></span><span id="state"></span></div>
+<h1 id="topic">…</h1>
+<div class="sub" id="sub"></div>
+<div class="warn" id="warn"></div>
+<div id="gauges"></div>
+<pre id="log"></pre>
+</main>
+<script>
+(function () {
+  var $ = function (i) { return document.getElementById(i); }, last = null;
+  function put(s) {
+    var t = s.topic || {}, j = s.job || {}, age = (Date.now() - Date.parse(s.at)) / 1000;
+    if (last !== null && last !== t.title) { document.title = "맥북모니터링 · " + t.title; }
+    last = t.title;
+    $("topic").textContent = t.title || "…";
+    $("sub").textContent = [t.stage, t.week, t.layer, j.id ? "작업 " + j.id + " · " + j.state : ""].filter(Boolean).join(" · ");
+    $("at").textContent = "갱신 " + (s.at || "").replace("T", " ").replace("Z", " UTC");
+    $("state").textContent = "수업표 " + (s.curriculum || "?") + " · 대기 " + (s.pending || 0);
+    var w = $("warn"), msg = s.error ? "수집기 오류: " + s.error : age > 90 ? "수집기가 " + Math.round(age) + "초째 멈춰 있음" : "";
+    w.style.display = msg ? "block" : "none"; w.textContent = msg;
+    var g = $("gauges"); g.textContent = "";
+    (s.gauges || []).forEach(function (x) {
+      var d = document.createElement("div"); d.className = "g";
+      var l = document.createElement("div"); l.className = "l";
+      var a = document.createElement("span"); a.textContent = x.label; var b = document.createElement("span"); b.textContent = x.text + " · " + Math.round(100 * x.v) + "%";
+      l.appendChild(a); l.appendChild(b);
+      var t2 = document.createElement("div"); t2.className = "t"; var f = document.createElement("div"); f.className = "f"; f.style.width = Math.round(100 * x.v) + "%"; t2.appendChild(f);
+      d.appendChild(l); d.appendChild(t2); g.appendChild(d);
+    });
+    $("log").textContent = (s.log || []).map(function (l) { return (l.t || "").slice(11, 19) + "  " + (l.src === "zyte" ? "[zyte] " : "") + l.msg; }).join("\n");
+  }
+  function tick() {
+    fetch("status.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(put)
+      .catch(function (e) { var w = $("warn"); w.style.display = "block"; w.textContent = "상태 파일을 읽지 못함: " + e.message; });
+  }
+  tick(); setInterval(tick, 10000);
+})();
+</script>
+</body>
+</html>
