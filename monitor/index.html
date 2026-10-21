@@ -82,8 +82,8 @@ pre{margin:1.4rem 0 0;padding:.8rem;border:1px solid var(--line);border-radius:8
   }
   tick(); setInterval(tick, 10000);
 
-  var MODE = { running: "작업 진행 중", off: "수업표 꺼짐 (감시 쉼)", idle_due: "다음 수업 대기", idle_none: "할 일 없음 (정상 대기)" };
-  var KIND = { "continue": "continue 입력", restart: "restart", waypoint: "waypoint", note: "알림", error: "오류" };
+  var MODE = { running: "작업 진행 중", idle: "작업 없음 (30분 넘으면 정체)", paused: "감시 일시중지", off: "수업표 꺼짐 (감시 쉼)", idle_due: "다음 수업 대기", idle_none: "할 일 없음 (정상 대기)" };
+  var KIND = { "continue": "continue 입력", restart: "restart", relaunch: "재기동", waypoint: "waypoint", note: "알림", error: "오류" };
   function putWd(w) {
     var now = Date.now(), age = (now - Date.parse(w.at)) / 1000, stall = w.stall || 0;
     $("wdmode").textContent = "감시 · " + (MODE[w.mode] || w.mode || "?");
@@ -91,9 +91,9 @@ pre{margin:1.4rem 0 0;padding:.8rem;border:1px solid var(--line);border-radius:8
     var pips = $("pips").getElementsByClassName("pip");
     for (var i = 0; i < 3; i++) { pips[i].className = "pip" + (i < stall ? " on" : "") + (i === 2 && stall >= 3 ? " last" : ""); }
     $("pipn").textContent = stall + " / 3";
-    var idle = (w.mode === "off" || w.mode === "idle_none") ? 0 : Math.max(0, (now - Date.parse(w.last_change)) / 60000), v = Math.min(1, idle / 30), f = $("idlef");
+    var calm = (w.mode === "paused" || w.mode === "off" || w.mode === "idle_none"), idle = calm ? 0 : Math.max(0, (now - Date.parse(w.last_change)) / 60000), v = Math.min(1, idle / 30), f = $("idlef");
     f.style.width = Math.round(100 * v) + "%"; f.className = "f" + (idle >= 30 ? " over bl" : idle >= 20 ? " hot bl" : "");
-    $("idlet").textContent = (w.mode === "off" || w.mode === "idle_none") ? "정상 대기" : Math.round(idle) + "분 / 30분";
+    $("idlet").textContent = calm ? (w.mode === "paused" ? "일시중지" : "정상 대기") : Math.round(idle) + "분 / 30분";
     $("cum").textContent = (w.cumulative || 0).toLocaleString("ko-KR");
     $("rs").textContent = (w.restarts_today || 0) + " / 4";
     var p = w.latest_waypoint;

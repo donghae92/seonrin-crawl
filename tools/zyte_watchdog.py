@@ -5,22 +5,25 @@
   zyte_watchdog.py once       one look
   zyte_watchdog.py show       the state in words
 
+Subject (owner, 2026-10-22): the existing rotating collection (spider seeded, mode=rotate / tier=all|daily) is what keeps Zyte busy; the curriculum is not used.
+  zyte_watchdog.py pause|resume   stop / restart the watching (on by default)
 The rule (owner, 2026-10-21):
   the cumulative count (pages + items over all jobs) did not change for 30 minutes  ->  "continue"
   the 3rd continue in a row without any change                                      ->  "restart" from the latest waypoint
   waypoint = the Zyte point (job, lesson, slice, counts) where change was seen again after a continue; the newest is the restart point.
 
-continue : starts any LaunchAgent that is missing, fires the curriculum tick at once when a lesson is due, writes the job's last warnings into the log.
-restart  : stops the stalled curriculum job (tag zy-curr only, never a manual one) and starts the waypoint's lesson again with the same slice.
-           The spider has no per-page resume, so "from the waypoint" means the same lesson and the same window again.
+continue : starts any LaunchAgent that is missing and writes the job's last warnings (or "no job is running") into the log.
+restart  : stops the stalled job if it is one of ours (rotate / daily collection, or tag zy-curr / zy-wd; never a manual one), waits 3 minutes to see whether the
+           loop that normally starts jobs has taken over, and if nothing runs starts the waypoint's job again with the same arguments (same slice = same window, tag zy-wd).
+           The spider has no per-page resume, so "from the waypoint" means the same window again.
 hooks    : an executable file ~/.config/zy/hooks/continue or ~/.config/zy/hooks/restart is run first, with WD_JOB WD_LESSON WD_STALL_MIN WD_COUNT in its environment.
 
-Healthy waiting is not a stall: curriculum off, or nothing due, or a job still counting, resets the clock.
+Healthy waiting is not a stall: a job still counting, or the watching paused, resets the clock. No job at all for 30 minutes IS a stall.
 An API failure is not a stall either: that round is skipped.  At most WD_MAX_RESTARTS restarts a day (default 4); after that it only writes a note.
-Never starts the curriculum switch (owner's), never prints a key.  Files: ~/.config/zy/watchdog_state.json, ~/index-data/monitor/watchdog.json and watchdog.jsonl.
+Never touches the curriculum switch (owner's), never prints a key.  Files: ~/.config/zy/watchdog_state.json, ~/index-data/monitor/watchdog.json and watchdog.jsonl.
 """
 import json, os, subprocess, sys, time, urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -34,7 +37,29 @@ STATE = os.path.join(cu.DIR, "watchdog_state.json")
 SUMMARY = os.path.join(OUT_DIR, "watchdog.json")
 EVENTS = os.path.join(OUT_DIR, "watchdog.jsonl")
 AGENTS = {"com.seonrin.zyte-curriculum": False, "com.seonrin.zyte-monitor": True, "com.seonrin.zyte-monitor-web": True}  # label: needs a live process
+SWITCH = os.path.join(cu.DIR, "watchdog_switch.json")
+RELAUNCH_WAIT_MIN = float(os.environ.get("WD_RELAUNCH_WAIT", "3"))
 iso = lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def paused():
+    return cu.jload(SWITCH, {}).get("enabled") is False        # on by default
+
+
+def job_args(j):
+    a = j.get("spider_args")
+    if a is None:
+        try:
+            r = zc.call("%s/jobs/list.json?project=%s&job=%s" % (zc.API, zc.PROJECT, j["id"])).get("jobs", [])
+            a = (r[0] if r else {}).get("spider_args")
+        except Exception:
+            a = None
+    return a if isinstance(a, dict) else {}
+
+
+def owned(j):
+    a, tags = job_args(j), j.get("tags") or []
+    return "zy-curr" in tags or "zy-wd" in tags or a.get("mode") == "rotate" or a.get("tier") in ("all", "daily")
 
 
 def parse(s):
@@ -82,27 +107,19 @@ def update_count(state, jobs):
 
 
 def mode(run, pend, now):
-    if not cu.enabled():
-        return "off"
-    if run or pend:
-        return "running"
-    cur, st = cu.cur_load(), cu.jload(cu.state_path(), {})
-    cd = st.get("curr_day") or {}
-    if (cd.get("n", 0) if cd.get("date") == now.strftime("%Y-%m-%d") else 0) >= int(cur.get("max_jobs_per_day", 4)):
-        return "idle_none"                                # the day's limit is a healthy wait, not a stall
-    return "idle_due" if cu.pick(cur, st, now) else "idle_none"
+    if paused():
+        return "paused"
+    return "running" if (run or pend) else "idle"
 
 
 def make_waypoint(state, jobs, now):
     j = jobs[0] if jobs else None
-    topic = cu.jload(os.path.join(cu.DIR, "current_topic.json"), {})
-    lid = topic.get("lesson")
-    runs = (((cu.jload(cu.state_path(), {}).get("lessons") or {}).get(lid) or {}).get("runs", 0)) if lid else 0
-    wp = {"at": iso(now), "job": j and j["id"], "lesson": lid, "slice": ((runs - 1) % 100) if runs else None,
+    a = job_args(j) if j else {}
+    wp = {"at": iso(now), "job": j and j["id"], "spider": (j or {}).get("spider"), "args": a, "lesson": a.get("lesson"), "slice": a.get("slice"),
           "pages": int((j or {}).get("responses_received") or 0), "items": int((j or {}).get("items_scraped") or 0)}
     state.setdefault("waypoints", []).append(wp)
     state["waypoints"] = state["waypoints"][-20:]
-    event("waypoint", "change seen again after a continue: %s lesson=%s pages=%s" % (wp["job"], lid, wp["pages"]), waypoint=wp)
+    event("waypoint", "change seen again after a continue: %s %s pages=%s" % (wp["job"], a.get("lesson") or ("slice " + str(a.get("slice")) if a.get("slice") is not None else ""), wp["pages"]), waypoint=wp)
 
 
 def kick_agents():
@@ -154,50 +171,53 @@ def last_warnings(job):
 
 def do_continue(state, md, run, now, ctx):
     notes = [x for x in [run_hook("continue", ctx)] if x] + kick_agents()
-    if md == "idle_due":
-        started, why = cu.fill(now)
-        notes.append("tick: started %s %s" % started if started else "tick: nothing started (%s)" % why)
-    elif run:
+    if run:
         notes.append("last warnings: %s" % (" | ".join(last_warnings(run[0])) or "none"))
+    else:
+        notes.append("no job is running or waiting")
     event("continue", "no change for %d min (%s), continue number %d" % (ctx["stall_min"], md, ctx["count"]), notes=notes)
 
 
-def do_restart(state, run, pend, now, ctx):
+def do_restart(state, run, pend, fin, now, ctx):
     day = now.strftime("%Y-%m-%d"); rs = state.get("restarts") or {}
     n = rs.get("n", 0) if rs.get("date") == day else 0
     if n >= MAX_RESTARTS:
         event("note", "restart wanted but %d restarts were already made today; only a note" % n)
         return
-    notes, stopped = [x for x in [run_hook("restart", ctx)] if x], False
+    notes, stopped, mine = [x for x in [run_hook("restart", ctx)] if x], False, None
     for j in run + pend:
-        if "zy-curr" in (j.get("tags") or []):
+        if owned(j):
+            mine = mine or j
             try:
                 zc.call("%s/jobs/stop.json" % zc.API, {"project": zc.PROJECT, "job": j["id"]})
                 notes.append("stopped %s" % j["id"]); stopped = True
             except Exception as e:
                 notes.append("could not stop %s: %s" % (j["id"], type(e).__name__))
         else:
-            notes.append("left %s alone (not a curriculum job)" % j["id"])
+            notes.append("left %s alone (not one of our collection jobs)" % j["id"])
     wp = (state.get("waypoints") or [None])[-1]
-    lid = (wp or {}).get("lesson") or cu.jload(os.path.join(cu.DIR, "current_topic.json"), {}).get("lesson")
-    cur, st = cu.cur_load(), cu.jload(cu.state_path(), {})
-    L = {x["id"]: x for x in cur.get("lessons", [])}.get(lid)
+    src = wp or next((dict(spider=j.get("spider"), args=job_args(j), at="job start") for j in ([mine] if mine else []) + [x for x in fin if owned(x)][:1]), None)
     if (run or pend) and not stopped:
-        notes.append("no curriculum job could be stopped; not starting a second one")
-    elif L:
-        try:
-            ls = cu.lesson_state(st, lid)
-            if (wp or {}).get("slice") is not None:
-                ls["runs"] = int(wp["slice"])          # same slice again: launch adds one and uses runs % 100
-            jid = cu.launch(L, st, now)
-            cu.jsave(cu.state_path(), st)
-            notes.append("started %s again as %s from waypoint %s" % (lid, jid, (wp or {}).get("at", "none (job start)")))
-        except Exception as e:
-            notes.append("could not start %s again: %s" % (lid, str(e)[:120]))
+        notes.append("no job of ours could be stopped; not starting a second one")
+    elif src and src.get("args"):
+        state["relaunch"] = {"due": iso(now + timedelta(minutes=RELAUNCH_WAIT_MIN)), "spider": src.get("spider") or "seeded", "args": src["args"], "from": src.get("at")}
+        notes.append("relaunch planned in %d min from %s, unless another job has started by then" % (RELAUNCH_WAIT_MIN, src.get("at")))
     else:
-        notes.append("no lesson known for the restart point; the curriculum tick will pick the next one")
+        notes.append("no job arguments known; nothing to relaunch")
     state["restarts"] = {"date": day, "n": n + 1}
     event("restart", "continue did not help three times; restart from the latest waypoint", notes=notes)
+
+
+def relaunch(rl):
+    form = {"project": zc.PROJECT, "spider": rl.get("spider") or "seeded", "add_tag": "zy-wd"}
+    form.update({k: str(v) for k, v in (rl.get("args") or {}).items()})
+    try:
+        js = cu.land_settings(False)
+    except Exception as e:                                # without the landing door the data would be lost
+        event("error", "relaunch skipped, landing door not configured: %s" % str(e)[:100]); return
+    form["job_settings"] = json.dumps(js)
+    r = zc.call("%s/run.json" % zc.API, form)
+    event("relaunch", "relaunched %s %s as %s" % (form["spider"], {k: v for k, v in (rl.get("args") or {}).items() if k != "seedlines"}, r.get("jobid") if isinstance(r, dict) else r))
 
 
 def cycle(now=None):
@@ -210,6 +230,20 @@ def cycle(now=None):
             event("error", "could not read Zyte: %s %s" % (type(e).__name__, str(e)[:120]))
             state["last_err"] = iso(now); cu.jsave(STATE, state)
         return state
+    rl = state.get("relaunch")
+    if rl and now >= parse(rl["due"]):
+        state["relaunch"] = None
+        if run or pend:
+            event("note", "relaunch skipped: a job is already running (the loop took over)")
+        else:
+            try:
+                relaunch(rl)
+            except Exception as e:
+                event("error", "relaunch failed: %s %s" % (type(e).__name__, str(e)[:100]))
+            try:
+                run, pend, fin = zc.jobs("running", 5), zc.jobs("pending", 20), zc.jobs("finished", 5)
+            except (SystemExit, Exception):
+                pass
     gap = (now - parse(state["at"])).total_seconds() / 60 if state.get("at") else 0
     moved = update_count(state, run + pend + fin)
     md = mode(run, pend, now)
@@ -217,7 +251,7 @@ def cycle(now=None):
         state["last_change"] = iso(now)
         if gap > 10:
             event("note", "watchdog was away for %d min; the clock starts now" % gap)
-    if md in ("off", "idle_none") or moved:
+    if md == "paused" or moved:
         state["last_change"] = iso(now)
         if moved and state.get("pending_waypoint"):
             make_waypoint(state, (run or fin), now); state["pending_waypoint"] = False
@@ -229,13 +263,13 @@ def cycle(now=None):
         since_act = (now - parse(state["last_action"])).total_seconds() / 60 if state.get("last_action") else 1e9
         if idle >= STALL_MIN and since_act >= STALL_MIN:
             n = state.get("stall", 0) + 1
-            ctx = {"count": n, "stall_min": int(idle), "job": (run or [{}])[0].get("id", ""), "lesson": cu.jload(os.path.join(cu.DIR, "current_topic.json"), {}).get("lesson", "")}
+            ctx = {"count": n, "stall_min": int(idle), "job": (run or [{}])[0].get("id", ""), "lesson": (job_args(run[0]).get("lesson", "") if run else "")}
             try:
                 if n < 3:
                     state["stall"] = n; state["pending_waypoint"] = True      # counted even if the action below fails
                     do_continue(state, md, run, now, ctx)
                 else:
-                    do_restart(state, run, pend, now, ctx); state["stall"] = 0; state["pending_waypoint"] = False
+                    do_restart(state, run, pend, fin, now, ctx); state["stall"] = 0; state["pending_waypoint"] = False
                     state["last_change"] = iso(now)
             except Exception as e:
                 event("error", "action failed: %s %s" % (type(e).__name__, str(e)[:120]))
@@ -262,6 +296,8 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "once"
     if cmd == "show":
         show()
+    elif cmd in ("pause", "resume"):
+        cu.jsave(SWITCH, {"enabled": cmd == "resume"}); print("watching", "on" if cmd == "resume" else "paused")
     elif cmd == "once":
         cycle()
     elif cmd == "loop":
