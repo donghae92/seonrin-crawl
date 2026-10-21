@@ -20,6 +20,18 @@ h1{font-size:2rem;margin:.6rem 0 .1rem;font-weight:700}
 .g .f{height:100%;background:var(--bar);width:0;transition:width .8s}
 pre{margin:1.4rem 0 0;padding:.8rem;border:1px solid var(--line);border-radius:8px;font:.85rem/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;max-height:26rem;overflow:auto}
 .w{color:var(--warn)}
+.wd{margin:1.6rem 0 0;padding:1rem;border:1px solid var(--line);border-radius:10px}
+.wd h2{font-size:1.1rem;margin:0 0 .4rem;display:flex;justify-content:space-between;font-weight:700}
+.wd .row{display:flex;justify-content:space-between;align-items:center;margin:.7rem 0;font-size:1rem}
+.pips{display:flex;gap:.45rem;align-items:center}
+.pip{width:1rem;height:1rem;border-radius:50%;border:2px solid var(--ink);background:transparent}
+.pip.on{background:var(--warn)}.pip.on.last{background:var(--bad)}
+.f.hot{background:var(--warn)}.f.over{background:var(--bad)}
+.bl{animation:bl 1s steps(2,start) infinite}
+@keyframes bl{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.bl{animation:none}}
+.wd pre{margin:.8rem 0 0;max-height:11rem}
+.bad{color:var(--bad)}
 </style>
 </head>
 <body>
@@ -29,6 +41,15 @@ pre{margin:1.4rem 0 0;padding:.8rem;border:1px solid var(--line);border-radius:8
 <div class="sub" id="sub"></div>
 <div class="warn" id="warn"></div>
 <div id="gauges"></div>
+<section class="wd" id="wd">
+<h2><span id="wdmode">감시 …</span><span id="wdage" class="sub" style="margin:0"></span></h2>
+<div class="row"><span>정체 카운터 (3번째는 restart)</span><span class="pips" id="pips"><i class="pip"></i><i class="pip"></i><i class="pip"></i><b id="pipn" style="margin-left:.4rem">0 / 3</b></span></div>
+<div class="g" style="margin:.4rem 0"><div class="l"><span>변화 없는 시간</span><span id="idlet">…</span></div><div class="t"><div class="f" id="idlef"></div></div></div>
+<div class="row"><span>누적 변화 (쪽+줄)</span><span id="cum">…</span></div>
+<div class="row"><span>오늘 restart</span><span id="rs">…</span></div>
+<div class="row"><span>restart 지점 (waypoint)</span><span id="wp">…</span></div>
+<pre id="wdlog"></pre>
+</section>
 <pre id="log"></pre>
 </main>
 <script>
@@ -60,6 +81,30 @@ pre{margin:1.4rem 0 0;padding:.8rem;border:1px solid var(--line);border-radius:8
       .catch(function (e) { var w = $("warn"); w.style.display = "block"; w.textContent = "상태 파일을 읽지 못함: " + e.message; });
   }
   tick(); setInterval(tick, 10000);
+
+  var MODE = { running: "작업 진행 중", off: "수업표 꺼짐 (감시 쉼)", idle_due: "다음 수업 대기", idle_none: "할 일 없음 (정상 대기)" };
+  var KIND = { "continue": "continue 입력", restart: "restart", waypoint: "waypoint", note: "알림", error: "오류" };
+  function putWd(w) {
+    var now = Date.now(), age = (now - Date.parse(w.at)) / 1000, stall = w.stall || 0;
+    $("wdmode").textContent = "감시 · " + (MODE[w.mode] || w.mode || "?");
+    var a = $("wdage"); a.textContent = age > 180 ? "감시가 " + Math.round(age) + "초째 멈춰 있음" : "점검 " + Math.round(age) + "초 전"; a.className = age > 180 ? "bad" : "sub";
+    var pips = $("pips").getElementsByClassName("pip");
+    for (var i = 0; i < 3; i++) { pips[i].className = "pip" + (i < stall ? " on" : "") + (i === 2 && stall >= 3 ? " last" : ""); }
+    $("pipn").textContent = stall + " / 3";
+    var idle = (w.mode === "off" || w.mode === "idle_none") ? 0 : Math.max(0, (now - Date.parse(w.last_change)) / 60000), v = Math.min(1, idle / 30), f = $("idlef");
+    f.style.width = Math.round(100 * v) + "%"; f.className = "f" + (idle >= 30 ? " over bl" : idle >= 20 ? " hot bl" : "");
+    $("idlet").textContent = (w.mode === "off" || w.mode === "idle_none") ? "정상 대기" : Math.round(idle) + "분 / 30분";
+    $("cum").textContent = (w.cumulative || 0).toLocaleString("ko-KR");
+    $("rs").textContent = (w.restarts_today || 0) + " / 4";
+    var p = w.latest_waypoint;
+    $("wp").textContent = p ? [p.job, p.lesson, p.slice != null ? "구간 " + p.slice : "", (p.at || "").slice(5, 16).replace("T", " ")].filter(Boolean).join(" · ") : "아직 없음 (continue 뒤 변화가 보이면 생김)";
+    $("wdlog").textContent = (w.events || []).slice(-8).reverse().map(function (e) { return (e.t || "").slice(11, 19) + "  " + (KIND[e.kind] || e.kind) + "  " + (e.msg || ""); }).join("\n") || "기록 없음";
+  }
+  function tickWd() {
+    fetch("watchdog.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(putWd)
+      .catch(function (e) { $("wdmode").textContent = "감시 · 상태 파일 없음 (" + e.message + ")"; });
+  }
+  tickWd(); setInterval(tickWd, 10000);
 })();
 </script>
 </body>
